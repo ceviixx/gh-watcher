@@ -1,0 +1,65 @@
+name: GitHub Release Monitor
+
+on:
+  # Run every 5 minutes
+  # schedule:
+  #   - cron: '*/5 * * * *'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+  
+  # Run on push for testing
+  # push:
+  #   branches: [ main ]
+
+jobs:
+  monitor-releases:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Restore state cache
+        uses: actions/cache@v4
+        with:
+          path: ./state
+          key: release-state-${{ github.run_id }}
+          restore-keys: |
+            release-state-
+      
+      - name: Run release monitor
+        env:
+          REPOS: ${{ vars.REPOS }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || github.token }}
+          POLL_INTERVAL: 0
+          STATE_DIR: ./state
+          ONLY_LATEST: ${{ vars.ONLY_LATEST || 'false' }}
+          INCLUDE_PRERELEASE: ${{ vars.INCLUDE_PRERELEASE || 'true' }}
+          INCLUDE_DRAFT: ${{ vars.INCLUDE_DRAFT || 'false' }}
+          SKIP_EXISTING_ON_INIT: ${{ vars.SKIP_EXISTING_ON_INIT || 'true' }}
+          NOTIFY_ON: ${{ vars.NOTIFY_ON || 'new_release,dl_increase,new_asset' }}
+          ASSET_NAME_INCLUDE: ${{ vars.ASSET_NAME_INCLUDE || '' }}
+          ASSET_NAME_EXCLUDE: ${{ vars.ASSET_NAME_EXCLUDE || '' }}
+          USE_EMBEDS: ${{ vars.USE_EMBEDS || 'true' }}
+          DISCORD_USERNAME: ${{ vars.DISCORD_USERNAME || 'GH Release Bot' }}
+          DISCORD_AVATAR_URL: ${{ vars.DISCORD_AVATAR_URL || '' }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL || 'INFO' }}
+        run: python3 bot.py
+      
+      - name: Save state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ./state
+          key: release-state-${{ github.run_id }}

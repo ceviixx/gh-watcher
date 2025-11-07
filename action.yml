@@ -1,0 +1,100 @@
+name: 'GitHub Release Monitor'
+description: 'Monitor GitHub repositories for new releases and send Discord notifications'
+author: 'ceviixx'
+
+branding:
+  icon: 'bell'
+  color: 'blue'
+
+inputs:
+  repos:
+    description: 'Comma-separated list of repositories to monitor (format: owner/repo)'
+    required: true
+  discord_webhook_url:
+    description: 'Discord webhook URL for notifications'
+    required: true
+  github_token:
+    description: 'GitHub token for API access (increases rate limits)'
+    required: false
+    default: ${{ github.token }}
+  state_dir:
+    description: 'Directory for state files'
+    required: false
+    default: './state'
+  only_latest:
+    description: 'Only check the latest release'
+    required: false
+    default: 'false'
+  include_prerelease:
+    description: 'Include prereleases'
+    required: false
+    default: 'true'
+  include_draft:
+    description: 'Include draft releases'
+    required: false
+    default: 'false'
+  skip_existing_on_init:
+    description: 'Skip existing releases on first start'
+    required: false
+    default: 'true'
+  notify_on:
+    description: 'Events to notify on (comma-separated: new_release,new_asset,dl_increase)'
+    required: false
+    default: 'new_release,dl_increase,new_asset'
+  asset_name_include:
+    description: 'Regex filter for asset names (only matching assets)'
+    required: false
+    default: ''
+  asset_name_exclude:
+    description: 'Regex filter to exclude assets'
+    required: false
+    default: ''
+  use_embeds:
+    description: 'Use Discord embeds'
+    required: false
+    default: 'true'
+  discord_username:
+    description: 'Bot username in Discord'
+    required: false
+    default: 'GH Release Bot'
+  discord_avatar_url:
+    description: 'Bot avatar URL'
+    required: false
+    default: ''
+  log_level:
+    description: 'Logging level (DEBUG, INFO, WARNING, ERROR)'
+    required: false
+    default: 'INFO'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      shell: bash
+      run: pip install -r ${{ github.action_path }}/requirements.txt
+    
+    - name: Run release monitor
+      shell: bash
+      env:
+        REPOS: ${{ inputs.repos }}
+        DISCORD_WEBHOOK_URL: ${{ inputs.discord_webhook_url }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        STATE_DIR: ${{ inputs.state_dir }}
+        POLL_INTERVAL: 0
+        ONLY_LATEST: ${{ inputs.only_latest }}
+        INCLUDE_PRERELEASE: ${{ inputs.include_prerelease }}
+        INCLUDE_DRAFT: ${{ inputs.include_draft }}
+        SKIP_EXISTING_ON_INIT: ${{ inputs.skip_existing_on_init }}
+        NOTIFY_ON: ${{ inputs.notify_on }}
+        ASSET_NAME_INCLUDE: ${{ inputs.asset_name_include }}
+        ASSET_NAME_EXCLUDE: ${{ inputs.asset_name_exclude }}
+        USE_EMBEDS: ${{ inputs.use_embeds }}
+        DISCORD_USERNAME: ${{ inputs.discord_username }}
+        DISCORD_AVATAR_URL: ${{ inputs.discord_avatar_url }}
+        LOG_LEVEL: ${{ inputs.log_level }}
+      run: python3 ${{ github.action_path }}/bot.py

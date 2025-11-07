@@ -1,0 +1,17 @@
+version: "3.9"
+services:
+  gh-release-bot:
+    build: .
+    container_name: gh-release-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - gh_release_state:/state
+    # If you need an HTTP/HTTPS proxy:
+    # environment:
+    #   - HTTPS_PROXY=https://user:pass@proxy:8443
+    #   - HTTP_PROXY=http://user:pass@proxy:8080
+    #   - NO_PROXY=localhost,127.0.0.1
+volumes:
+  gh_release_state:
