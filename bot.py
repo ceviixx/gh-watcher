@@ -93,6 +93,9 @@ if POSTGRES_DSN:
         pg_conn = psycopg2.connect(POSTGRES_DSN)
         pg_conn.autocommit = True
         
+        # Extract table name for index naming (remove schema if present)
+        table_name_for_idx = POSTGRES_TABLE.split('.')[-1]
+        
         # Create table if not exists
         with pg_conn.cursor() as cur:
             cur.execute(f"""
@@ -106,8 +109,8 @@ if POSTGRES_DSN:
                     data JSONB
                 )
             """)
-            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{POSTGRES_TABLE}_timestamp ON {POSTGRES_TABLE}(timestamp)")
-            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{POSTGRES_TABLE}_repo ON {POSTGRES_TABLE}(repo)")
+            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name_for_idx}_timestamp ON {POSTGRES_TABLE}(timestamp)")
+            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name_for_idx}_repo ON {POSTGRES_TABLE}(repo)")
         log.info("PostgreSQL logging enabled: %s", POSTGRES_TABLE)
     except Exception as e:
         log.warning("PostgreSQL connection failed (continuing without DB logging): %s", e)
@@ -164,8 +167,11 @@ def log_to_postgres(repo: str, event_type: str, log_level: str, message: str, da
                 """,
                 (log_level, repo, event_type, message, json.dumps(data) if data else None)
             )
+        log.debug("PostgreSQL log written: %s - %s", repo, event_type)
     except Exception as e:
-        log.warning("Failed to log to PostgreSQL: %s", e)
+        log.error("Failed to log to PostgreSQL: %s | Query would be: INSERT INTO %s ...", e, POSTGRES_TABLE)
+        import traceback
+        log.error("Traceback: %s", traceback.format_exc())
 
 def fetch_releases(repo: str, etag: Optional[str]) -> Tuple[int, Any, Optional[str], Optional[requests.Response]]:
     url = f"{GITHUB_API_BASE}/repos/{repo}/releases"
