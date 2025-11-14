@@ -194,7 +194,7 @@ def summarize_release(rel: Dict[str, Any]) -> Dict[str, Any]:
             continue
         if exc_re and exc_re.search(name):
             continue
-        asset_info[a["id"]] = {
+        asset_info[str(a["id"])] = {
             "name": name,
             "download_count": int(a.get("download_count", 0)),
             "browser_download_url": a.get("browser_download_url"),
