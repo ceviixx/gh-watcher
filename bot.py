@@ -347,6 +347,7 @@ def process_repo(repo: str) -> None:
     is_first_run = not state.get("releases")  # No state = first run
     
     log.info("[%s] Checking for updates...", repo)
+    log_to_postgres(repo, "check_start", "INFO", "Starting release check", {"first_run": is_first_run})
     
     try:
         status, data, new_etag, resp = fetch_releases(repo, state.get("etag"))
@@ -355,15 +356,26 @@ def process_repo(repo: str) -> None:
         if r is not None and r.status_code == 403 and "rate limit" in r.text.lower():
             reset = r.headers.get("x-ratelimit-reset")
             log.warning("Rate limit for %s. Reset header: %s", repo, reset)
+            log_to_postgres(repo, "rate_limit", "WARNING", f"Rate limit reached. Reset: {reset}", {
+                "reset_time": reset
+            })
         else:
             log.error("HTTPError %s: %s", repo, e)
+            log_to_postgres(repo, "error", "ERROR", f"HTTPError: {e}", {
+                "status_code": r.status_code if r else None,
+                "error": str(e)
+            })
         return
     except Exception as e:
         log.error("Error fetching releases %s: %s", repo, e)
+        log_to_postgres(repo, "error", "ERROR", f"Error fetching releases: {e}", {"error": str(e)})
         return
 
     if status == 304:
         log.info("[%s] 304 Not Modified - no changes detected", repo)
+        log_to_postgres(repo, "no_change", "INFO", "304 Not Modified - no changes detected", {
+            "status_code": 304
+        })
         return
 
     snapshot = build_snapshot(data)
@@ -410,6 +422,10 @@ def process_repo(repo: str) -> None:
     if is_first_run and SKIP_EXISTING_ON_INIT:
         log.info("[%s] First start: %d existing release(s) marked as known (no notifications)", 
                  repo, len(snapshot))
+        log_to_postgres(repo, "first_start", "INFO", f"First start: {len(snapshot)} existing releases marked as known", {
+            "release_count": len(snapshot),
+            "skip_notifications": True
+        })
         state["etag"] = new_etag
         state["releases"] = snapshot
         save_state(repo, state)
