@@ -260,6 +260,8 @@ def process_repo(repo: str) -> None:
     state = load_state(repo)
     is_first_run = not state.get("releases")  # No state = first run
     
+    log.info("[%s] Checking for updates...", repo)
+    
     try:
         status, data, new_etag, resp = fetch_releases(repo, state.get("etag"))
     except requests.HTTPError as e:
@@ -275,10 +277,48 @@ def process_repo(repo: str) -> None:
         return
 
     if status == 304:
-        log.debug("[%s] 304 Not Modified", repo)
+        log.info("[%s] 304 Not Modified - no changes detected", repo)
         return
 
     snapshot = build_snapshot(data)
+    
+    # Log old vs new state
+    old_releases = state.get("releases", {})
+    log.info("[%s] Old state: %d release(s), New state: %d release(s)", 
+             repo, len(old_releases), len(snapshot))
+    
+    # Log release details for comparison
+    for rel_id, rel in snapshot.items():
+        old_rel = old_releases.get(rel_id)
+        tag = rel.get("tag_name", "unknown")
+        asset_count = len(rel.get("assets", {}))
+        
+        if old_rel:
+            # Existing release - check for changes
+            old_asset_count = len(old_rel.get("assets", {}))
+            if asset_count != old_asset_count:
+                log.info("[%s] Release %s: assets changed (%d → %d)", 
+                         repo, tag, old_asset_count, asset_count)
+            
+            # Log download count changes
+            for asset_id, asset in rel.get("assets", {}).items():
+                old_asset = old_rel.get("assets", {}).get(asset_id)
+                if old_asset:
+                    old_dl = old_asset.get("download_count", 0)
+                    new_dl = asset.get("download_count", 0)
+                    if new_dl != old_dl:
+                        log.info("[%s] Release %s: Asset '%s' downloads: %d → %d (+%d)", 
+                                 repo, tag, asset.get("name"), old_dl, new_dl, new_dl - old_dl)
+                else:
+                    log.info("[%s] Release %s: New asset '%s' with %d downloads", 
+                             repo, tag, asset.get("name"), asset.get("download_count", 0))
+        else:
+            # New release
+            log.info("[%s] New release detected: %s with %d asset(s)", 
+                     repo, tag, asset_count)
+            for asset_id, asset in rel.get("assets", {}).items():
+                log.info("[%s]   - Asset: '%s' (%d downloads)", 
+                         repo, asset.get("name"), asset.get("download_count", 0))
     
     # On first start: Either skip all releases or report all
     if is_first_run and SKIP_EXISTING_ON_INIT:
@@ -290,10 +330,13 @@ def process_repo(repo: str) -> None:
         return
     
     events = detect_changes(state, snapshot)
+    log.info("[%s] Detected %d event(s) to notify", repo, len(events))
+    
     if not events:
-        log.info("[%s] No changes", repo)
+        log.info("[%s] No notification events generated", repo)
     else:
         for ev in events:
+            log.info("[%s] Event: %s", repo, ev["type"])
             try:
                 format_and_send_event(repo, ev)
             except Exception as ex:
