@@ -68,18 +68,22 @@ log.addHandler(console_handler)
 
 # File handler (optional)
 if LOG_TO_FILE:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    file_handler = RotatingFileHandler(
-        LOG_DIR / "gh-watcher.log",
-        maxBytes=LOG_MAX_BYTES,
-        backupCount=LOG_BACKUP_COUNT,
-        encoding="utf-8"
-    )
-    file_handler.setLevel(LOG_LEVEL)
-    file_formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-    file_handler.setFormatter(file_formatter)
-    log.addHandler(file_handler)
-    log.info("File logging enabled: %s", LOG_DIR / "gh-watcher.log")
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        log.warning("Cannot create log directory %s (permission denied), file logging disabled", LOG_DIR)
+    else:
+        file_handler = RotatingFileHandler(
+            LOG_DIR / "gh-watcher.log",
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+            encoding="utf-8"
+        )
+        file_handler.setLevel(LOG_LEVEL)
+        file_formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+        file_handler.setFormatter(file_formatter)
+        log.addHandler(file_handler)
+        log.info("File logging enabled: %s", LOG_DIR / "gh-watcher.log")
 
 # PostgreSQL connection (optional)
 pg_conn = None

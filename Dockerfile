@@ -24,5 +24,6 @@ USER appuser
 
 ENV PYTHONUNBUFFERED=1
 ENV STATE_DIR=/state
+ENV LOG_DIR=/logs
 
 ENTRYPOINT ["python", "/app/bot.py"]
