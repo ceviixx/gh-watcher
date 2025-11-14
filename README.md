@@ -185,6 +185,7 @@ If you want to build the image yourself or make modifications:
 
 #### Docker run (without compose):
 
+**With named volume (Docker-managed):**
 ```bash
 docker run -d \
   --name gh-release-bot \
@@ -193,6 +194,32 @@ docker run -d \
   -e DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/xxx/yyy" \
   -e POLL_INTERVAL=300 \
   -v gh_release_state:/state \
+  ghcr.io/ceviixx/gh-watcher:latest
+```
+
+**With local directory mapping:**
+```bash
+docker run -d \
+  --name gh-release-bot \
+  --restart unless-stopped \
+  -e REPOS="cli/cli,python/cpython" \
+  -e DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/xxx/yyy" \
+  -e POLL_INTERVAL=300 \
+  -e STATE_DIR=/state \
+  -v $(pwd)/state:/state \
+  ghcr.io/ceviixx/gh-watcher:latest
+```
+
+**Custom state directory path:**
+```bash
+# Map host directory /my/custom/path to container's /data
+docker run -d \
+  --name gh-release-bot \
+  --restart unless-stopped \
+  -e REPOS="cli/cli,python/cpython" \
+  -e DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/xxx/yyy" \
+  -e STATE_DIR=/data \
+  -v /my/custom/path:/data \
   ghcr.io/ceviixx/gh-watcher:latest
 ```
 

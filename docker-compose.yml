@@ -12,7 +12,12 @@ services:
     env_file:
       - .env
     volumes:
+      # Option 1: Named volume (managed by Docker)
       - gh_release_state:/state
+      
+      # Option 2: Bind mount to local directory (uncomment to use)
+      # Make sure STATE_DIR=/state in .env matches the container path
+      # - ./state:/state
     # If you need an HTTP/HTTPS proxy:
     # environment:
     #   - HTTPS_PROXY=https://user:pass@proxy:8443
