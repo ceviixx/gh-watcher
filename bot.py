@@ -154,14 +154,14 @@ def detect_changes(old: Dict[str, Any], new: Dict[str, Any]) -> List[Dict[str, A
     if "dl_increase" in NOTIFY_ON:
         for rel_id, rel in new.items():
             old_rel = old_rels.get(rel_id)
-            if not old_rel:
-                continue
             for asset_id, asset in rel["assets"].items():
-                old_asset = (old_rel.get("assets") or {}).get(asset_id)
-                if not old_asset:
-                    continue
-                old_dl = int(old_asset.get("download_count", 0))
+                old_asset = (old_rel.get("assets") or {}).get(asset_id) if old_rel else None
+                
+                # Determine old download count (0 if asset or release is new)
+                old_dl = int(old_asset.get("download_count", 0)) if old_asset else 0
                 new_dl = int(asset.get("download_count", 0))
+                
+                # Report increase if downloads increased (including from 0 for new releases/assets)
                 if new_dl > old_dl:
                     events.append({
                         "type": "dl_increase",
