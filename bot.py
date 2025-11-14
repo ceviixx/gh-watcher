@@ -5,8 +5,10 @@ import json
 import time
 import signal
 import logging
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
+from datetime import datetime
 import requests
 
 # -------------------------
@@ -40,9 +42,72 @@ TIMEOUT = int(os.getenv("HTTP_TIMEOUT", "20"))
 STATE_DIR = Path(os.getenv("STATE_DIR", "./state"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
+# Logging configuration
+LOG_DIR = Path(os.getenv("LOG_DIR", "./logs"))
+LOG_TO_FILE = os.getenv("LOG_TO_FILE", "true").lower() in {"1","true","yes"}
+LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", "10485760"))  # 10MB default
+LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "5"))
+
+# PostgreSQL configuration (optional)
+POSTGRES_DSN = os.getenv("POSTGRES_DSN", "").strip()
+POSTGRES_TABLE = os.getenv("POSTGRES_TABLE", "gh_watcher_logs")
+
 SESSION = requests.Session()
-logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s | %(levelname)s | %(message)s")
+
+# Setup logging
 log = logging.getLogger("gh-release-bot")
+log.setLevel(LOG_LEVEL)
+log.handlers.clear()
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(LOG_LEVEL)
+console_formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+console_handler.setFormatter(console_formatter)
+log.addHandler(console_handler)
+
+# File handler (optional)
+if LOG_TO_FILE:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    file_handler = RotatingFileHandler(
+        LOG_DIR / "gh-watcher.log",
+        maxBytes=LOG_MAX_BYTES,
+        backupCount=LOG_BACKUP_COUNT,
+        encoding="utf-8"
+    )
+    file_handler.setLevel(LOG_LEVEL)
+    file_formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+    file_handler.setFormatter(file_formatter)
+    log.addHandler(file_handler)
+    log.info("File logging enabled: %s", LOG_DIR / "gh-watcher.log")
+
+# PostgreSQL connection (optional)
+pg_conn = None
+if POSTGRES_DSN:
+    try:
+        import psycopg2
+        pg_conn = psycopg2.connect(POSTGRES_DSN)
+        pg_conn.autocommit = True
+        
+        # Create table if not exists
+        with pg_conn.cursor() as cur:
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {POSTGRES_TABLE} (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    log_level VARCHAR(20),
+                    repo VARCHAR(255),
+                    event_type VARCHAR(50),
+                    message TEXT,
+                    data JSONB
+                )
+            """)
+            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{POSTGRES_TABLE}_timestamp ON {POSTGRES_TABLE}(timestamp)")
+            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{POSTGRES_TABLE}_repo ON {POSTGRES_TABLE}(repo)")
+        log.info("PostgreSQL logging enabled: %s", POSTGRES_TABLE)
+    except Exception as e:
+        log.warning("PostgreSQL connection failed (continuing without DB logging): %s", e)
+        pg_conn = None
 
 inc_re = re.compile(ASSET_NAME_INCLUDE) if ASSET_NAME_INCLUDE else None
 exc_re = re.compile(ASSET_NAME_EXCLUDE) if ASSET_NAME_EXCLUDE else None
@@ -80,6 +145,23 @@ def load_state(repo: str) -> Dict[str, Any]:
 def save_state(repo: str, state: Dict[str, Any]) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     _state_path(repo).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def log_to_postgres(repo: str, event_type: str, log_level: str, message: str, data: Optional[Dict[str, Any]] = None) -> None:
+    """Log event to PostgreSQL database if configured"""
+    if not pg_conn:
+        return
+    
+    try:
+        with pg_conn.cursor() as cur:
+            cur.execute(
+                f"""
+                INSERT INTO {POSTGRES_TABLE} (log_level, repo, event_type, message, data)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (log_level, repo, event_type, message, json.dumps(data) if data else None)
+            )
+    except Exception as e:
+        log.warning("Failed to log to PostgreSQL: %s", e)
 
 def fetch_releases(repo: str, etag: Optional[str]) -> Tuple[int, Any, Optional[str], Optional[requests.Response]]:
     url = f"{GITHUB_API_BASE}/repos/{repo}/releases"
@@ -331,16 +413,44 @@ def process_repo(repo: str) -> None:
     
     events = detect_changes(state, snapshot)
     log.info("[%s] Detected %d event(s) to notify", repo, len(events))
+    log_to_postgres(repo, "check", "INFO", f"Detected {len(events)} event(s)", {
+        "old_releases": len(old_releases),
+        "new_releases": len(snapshot),
+        "events": len(events)
+    })
     
     if not events:
         log.info("[%s] No notification events generated", repo)
     else:
         for ev in events:
             log.info("[%s] Event: %s", repo, ev["type"])
+            
+            # Log to PostgreSQL
+            event_data = {
+                "type": ev["type"],
+                "release": {
+                    "tag": ev["release"].get("tag_name"),
+                    "name": ev["release"].get("name"),
+                    "url": ev["release"].get("html_url")
+                }
+            }
+            if "asset" in ev:
+                event_data["asset"] = {
+                    "name": ev["asset"].get("name"),
+                    "download_count": ev["asset"].get("download_count")
+                }
+            if "delta" in ev:
+                event_data["delta"] = ev["delta"]
+                event_data["from"] = ev["from"]
+                event_data["to"] = ev["to"]
+            
+            log_to_postgres(repo, ev["type"], "INFO", f"Event: {ev['type']}", event_data)
+            
             try:
                 format_and_send_event(repo, ev)
             except Exception as ex:
                 log.error("Discord error (%s): %s", repo, ex)
+                log_to_postgres(repo, "error", "ERROR", f"Discord error: {ex}", {"error": str(ex)})
 
     state["etag"] = new_etag
     state["releases"] = snapshot

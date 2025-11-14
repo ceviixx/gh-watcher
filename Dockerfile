@@ -16,9 +16,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Code
 COPY bot.py .
 
-# State directory + permissions
-RUN mkdir -p /state && chown -R appuser:appuser /state && chmod -R 755 /state
-VOLUME ["/state"]
+# State and logs directories + permissions
+RUN mkdir -p /state /logs && chown -R appuser:appuser /state /logs && chmod -R 755 /state /logs
+VOLUME ["/state", "/logs"]
 
 USER appuser
 

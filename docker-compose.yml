@@ -14,10 +14,12 @@ services:
     volumes:
       # Option 1: Named volume (managed by Docker)
       - gh_release_state:/state
+      - gh_release_logs:/logs
       
       # Option 2: Bind mount to local directory (uncomment to use)
       # Make sure STATE_DIR=/state in .env matches the container path
       # - ./state:/state
+      # - ./logs:/logs
     # If you need an HTTP/HTTPS proxy:
     # environment:
     #   - HTTPS_PROXY=https://user:pass@proxy:8443
@@ -25,3 +27,4 @@ services:
     #   - NO_PROXY=localhost,127.0.0.1
 volumes:
   gh_release_state:
+  gh_release_logs:

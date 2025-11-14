@@ -277,7 +277,19 @@ All settings are configured via environment variables (see `.env.example`):
 - `USE_EMBEDS`: Use Discord embeds (default: true)
 - `DISCORD_USERNAME`: Bot username in Discord
 - `DISCORD_AVATAR_URL`: Bot avatar URL
-- `LOG_LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR)
+
+### Logging Configuration
+- `LOG_LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR) - default: INFO
+- `LOG_TO_FILE`: Enable file logging (default: true)
+- `LOG_DIR`: Directory for log files (default: `/logs` or `./logs`)
+- `LOG_MAX_BYTES`: Maximum log file size before rotation (default: 10485760 = 10MB)
+- `LOG_BACKUP_COUNT`: Number of backup log files to keep (default: 5)
+
+### PostgreSQL Logging (Optional)
+- `POSTGRES_DSN`: PostgreSQL connection string (e.g., `postgresql://user:password@localhost:5432/dbname`)
+- `POSTGRES_TABLE`: Table name for logs (default: `gh_watcher_logs`)
+
+When PostgreSQL is configured, all events are logged to the database with full metadata for analysis.
 
 ## Example Configuration
 
@@ -328,6 +340,43 @@ The bot stores its state in JSON files in `STATE_DIR`. This ensures:
 - Download counters are tracked correctly
 - ETags are used for efficient API usage
 
+### Logging
+
+**File Logging (default: enabled)**
+- Logs are written to rotating files in `LOG_DIR` (default: `./logs`)
+- Files automatically rotate when reaching `LOG_MAX_BYTES` (default: 10MB)
+- Keeps `LOG_BACKUP_COUNT` backup files (default: 5)
+- Logs include timestamps, levels, and detailed event information
+
+**Accessing logs in Docker:**
+```bash
+# View live logs
+docker compose logs -f
+
+# Access log files from volume
+docker run --rm -v gh-watcher_gh_release_logs:/logs alpine cat /logs/gh-watcher.log
+
+# Or copy logs to host
+docker run --rm -v gh-watcher_gh_release_logs:/logs -v $(pwd):/backup alpine cp -r /logs /backup/
+```
+
+**PostgreSQL Logging (optional)**
+- Set `POSTGRES_DSN` to enable database logging
+- All events are stored with full metadata in JSONB format
+- Useful for analytics, reporting, and debugging
+- Automatically creates table and indexes on first run
+
+**Example PostgreSQL setup:**
+```bash
+# In .env
+POSTGRES_DSN=postgresql://user:password@localhost:5432/gh_watcher
+POSTGRES_TABLE=gh_watcher_logs
+
+# Query logs
+SELECT * FROM gh_watcher_logs WHERE repo = 'cli/cli' ORDER BY timestamp DESC LIMIT 10;
+SELECT event_type, COUNT(*) FROM gh_watcher_logs GROUP BY event_type;
+```
+
 ### Rate Limits
 - Without GitHub Token: 60 requests/hour
 - With GitHub Token: 5000 requests/hour
@@ -335,7 +384,7 @@ The bot stores its state in JSON files in `STATE_DIR`. This ensures:
 Recommendation: Set a GitHub Personal Access Token for better rate limits.
 
 ### Debugging
-Set `LOG_LEVEL=DEBUG` for detailed logging output.
+Set `LOG_LEVEL=DEBUG` for detailed logging output. All download changes, new releases, and events are logged with before/after values.
 
 ## Troubleshooting
 
@@ -348,24 +397,32 @@ Set `LOG_LEVEL=DEBUG` for detailed logging output.
 **Problem**: No notifications
 - Solution: Check `DISCORD_WEBHOOK_URL` and look at the logs (`LOG_LEVEL=DEBUG`)
 
-**Problem**: Permission denied when writing to `/state` (Docker)
+**Problem**: Permission denied when writing to `/state` or `/logs` (Docker)
 - **Cause**: Local directory mapping without proper permissions
 - **Solution Option 1** (Recommended): Use named volumes instead of bind mounts
   ```yaml
   volumes:
     - gh_release_state:/state  # Docker-managed volume
+    - gh_release_logs:/logs
   ```
 - **Solution Option 2**: Fix permissions on bind-mounted directory
   ```bash
-  mkdir -p ./state
-  chmod 777 ./state
-  # Or match container user UID: chown 1000:1000 ./state
+  mkdir -p ./state ./logs
+  chmod 777 ./state ./logs
+  # Or match container user UID: chown 1000:1000 ./state ./logs
   docker compose restart
   ```
 - **Solution Option 3**: Run container with user flag (not recommended for security)
   ```bash
   docker run --user $(id -u):$(id -g) ...
   ```
+
+**Problem**: Missing download notifications
+- **Solution**: Check the log files for detailed information about detected changes
+  - Look for lines with "downloads: X → Y (+Z)" to see if changes are detected
+  - Check "Detected N event(s) to notify" - if 0, no changes were found
+  - Verify `NOTIFY_ON` includes `dl_increase`
+  - Enable PostgreSQL logging for detailed analytics
 
 ## License
 
