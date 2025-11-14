@@ -161,6 +161,13 @@ jobs:
    ```bash
    docker compose up -d
    ```
+   
+   **Note for local directory mapping:** If you use bind mounts (`./state:/state`), ensure proper permissions:
+   ```bash
+   # Create state directory with proper permissions
+   mkdir -p ./state
+   chmod 777 ./state  # Or: chown 1000:1000 ./state (appuser UID in container)
+   ```
 
 4. **View logs**
    ```bash
@@ -199,6 +206,9 @@ docker run -d \
 
 **With local directory mapping:**
 ```bash
+# Create directory with proper permissions first
+mkdir -p ./state && chmod 777 ./state
+
 docker run -d \
   --name gh-release-bot \
   --restart unless-stopped \
@@ -213,6 +223,7 @@ docker run -d \
 **Custom state directory path:**
 ```bash
 # Map host directory /my/custom/path to container's /data
+# Ensure permissions: chmod 777 /my/custom/path
 docker run -d \
   --name gh-release-bot \
   --restart unless-stopped \
@@ -336,6 +347,25 @@ Set `LOG_LEVEL=DEBUG` for detailed logging output.
 
 **Problem**: No notifications
 - Solution: Check `DISCORD_WEBHOOK_URL` and look at the logs (`LOG_LEVEL=DEBUG`)
+
+**Problem**: Permission denied when writing to `/state` (Docker)
+- **Cause**: Local directory mapping without proper permissions
+- **Solution Option 1** (Recommended): Use named volumes instead of bind mounts
+  ```yaml
+  volumes:
+    - gh_release_state:/state  # Docker-managed volume
+  ```
+- **Solution Option 2**: Fix permissions on bind-mounted directory
+  ```bash
+  mkdir -p ./state
+  chmod 777 ./state
+  # Or match container user UID: chown 1000:1000 ./state
+  docker compose restart
+  ```
+- **Solution Option 3**: Run container with user flag (not recommended for security)
+  ```bash
+  docker run --user $(id -u):$(id -g) ...
+  ```
 
 ## License
 
